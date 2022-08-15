@@ -1,0 +1,12 @@
+server.name: kibana
+# kibana的主机地址 0.0.0.0可表示监听所有IP
+server.host: "0.0.0.0"
+#
+# 这边设置自己es的地址，这里是用映射出素主机的9021端口，172.18.0.1是宿主机在docker网络中的ip
+elasticsearch.hosts: [ "http://172.18.0.1:9201" ]
+elasticsearch.username: 'kibana'
+elasticsearch.password: '123456'
+# # 显示登陆页面
+xpack.monitoring.ui.container.elasticsearch.enabled: true
+# 开启中文模式
+i18n.locale: "zh-CN"

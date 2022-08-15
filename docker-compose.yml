@@ -1,0 +1,54 @@
+version: '3'
+services:
+  mysql:
+    restart: "no"
+    image: mysql:5.7.16
+    container_name: mysql-master
+    volumes:
+      - ./mysql_datadir:/var/lib/mysql
+      - ./mysql_conf:/etc/mysql
+    environment:
+      - "MYSQL_ROOT_PASSWORD=123456"
+      - "TZ=Asia/Shanghai"
+    ports:
+      - 33060:3306
+    networks:
+      - mysql-net
+
+  redis:
+    image: redis:7.0.4
+    container_name: redis
+    ports:
+      - 6379:6379
+
+  elasticsearch:
+    image: elasticsearch:7.7.0
+    container_name: esdemo_es
+    restart: always 
+    environment:
+      - "cluster.name=elasticsearch" 
+      - "discovery.type=single-node"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx1024m"
+    volumes:
+      - ./plugins:/usr/share/elasticsearch/plugins
+      - ./data:/usr/share/elasticsearch/data
+    ports:
+      - 9201:9200
+  kibana:
+    image: kibana:7.7.0
+    container_name: esdemo_kibana
+    restart: always
+    volumes:
+      - ./kibana.yml:/usr/share/kibana/config/kibana.yml
+    ports:
+      - 5601:5601
+    privileged: true
+
+  maxwell:
+    image: zendesk/maxwell
+    container_name: esdemo_maxwell
+    entrypoint: bin/maxwell --user=root --password=123456 --host=172.19.0.1 --port=33060 --producer=redis --redis_host=172.19.0.1 --redis_port=6379
+
+networks:
+  mysql-net:
+    driver: bridge

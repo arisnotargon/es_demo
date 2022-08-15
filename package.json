@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "elasticsearch": "^16.7.3",
+    "ioredis": "^5.2.2"
+  }
+}
