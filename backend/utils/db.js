@@ -7,16 +7,18 @@
  */
 const mysql = require("mysql");
 const config = require("../config");
-const errcode = require('../utils/errcode');
+const errcode = require("../utils/errcode");
+const es = require("elasticsearch");
+const esClient = es.Client(config.es);
 
 const pool = mysql.createPool(config.mysql);
 
-pool.on('connection', (connection) => {
-    // console.log('取得连接');
+pool.on("connection", (connection) => {
+  // console.log('取得连接');
 });
 
-pool.on('release', (connection) => {
-    // console.log('释放了连接');
+pool.on("release", (connection) => {
+  // console.log('释放了连接');
 });
 
 pool.on("error", (err) => {
@@ -24,45 +26,45 @@ pool.on("error", (err) => {
 });
 
 function getConnection(res) {
-    return new Promise((resolve, reject) => {
-        pool.getConnection(function(err, connection) {
-            if (err) {
-                // not connected!
-                console.error(err);
-                if (res) {
-                    res.send({
-                        ...errcode.AUTH.UNAUTHORIZED
-                    });
-                }
-                reject(err)
-            } else {
-                resolve(connection)
-            }
-        })
-    })  
+  return new Promise((resolve, reject) => {
+    pool.getConnection(function (err, connection) {
+      if (err) {
+        // not connected!
+        console.error(err);
+        if (res) {
+          res.send({
+            ...errcode.AUTH.UNAUTHORIZED,
+          });
+        }
+        reject(err);
+      } else {
+        resolve(connection);
+      }
+    });
+  });
 }
 
 function execQuery(options, connection, release = true) {
-    return new Promise((resolve, reject) => {
-        // Use the connection
-        connection.query(options, function (error, results, fields) {
-            // When done with the connection, release it.
-            if (release) {
-                // 可以手动选择不 release，复用 connection，在事务结束再 release
-                connection.release();
-            }
+  return new Promise((resolve, reject) => {
+    // Use the connection
+    connection.query(options, function (error, results, fields) {
+      // When done with the connection, release it.
+      if (release) {
+        // 可以手动选择不 release，复用 connection，在事务结束再 release
+        connection.release();
+      }
 
-            if (error) {
-                // Handle error after the release.
-                reject(error)
-            } else {
-                resolve({
-                    results,
-                    fields
-                })
-            }
+      if (error) {
+        // Handle error after the release.
+        reject(error);
+      } else {
+        resolve({
+          results,
+          fields,
         });
-    })
+      }
+    });
+  });
 }
 
 /**
@@ -72,47 +74,52 @@ function execQuery(options, connection, release = true) {
  * @param {boolean} release 执行 query 后，是否自动 release
  */
 function query(options, connection, release) {
-    if (connection) {
-        return execQuery(options, connection, release)
-    } else {
-        return getConnection().then(connection => {
-            return execQuery(options, connection, release)
-        })
-    }
-    
+  if (connection) {
+    return execQuery(options, connection, release);
+  } else {
+    return getConnection().then((connection) => {
+      return execQuery(options, connection, release);
+    });
+  }
 }
 
 function execTransaction(connection, task) {
-    return new Promise((resolve, reject) => {
-        connection.beginTransaction(function(err) {
-            if (err) {
-                reject(err)
-            }
-            task.then(resp => {
-                connection.commit(function(err) {
-                    if (err) {
-                        connection.rollback(function() {
-                            reject(err)
-                        });
-                    } else {
-                        resolve(resp)
-                    }
+  return new Promise((resolve, reject) => {
+    connection.beginTransaction(function (err) {
+      if (err) {
+        reject(err);
+      }
+      task
+        .then(
+          (resp) => {
+            connection.commit(function (err) {
+              if (err) {
+                connection.rollback(function () {
+                  reject(err);
                 });
-            }, err => {
-                connection.rollback(function() {
-                    reject(err)
-                });
-            }).catch(err => {
-                connection.rollback(function() {
-                    reject(err)
-                });
-            })
+              } else {
+                resolve(resp);
+              }
+            });
+          },
+          (err) => {
+            connection.rollback(function () {
+              reject(err);
+            });
+          }
+        )
+        .catch((err) => {
+          connection.rollback(function () {
+            reject(err);
+          });
         });
-    }).finally(() => {
-        connection.release();
-    })
+    });
+  }).finally(() => {
+    connection.release();
+  });
 }
 
 module.exports.getConnection = getConnection;
 module.exports.query = query;
 module.exports.execTransaction = execTransaction;
+module.exports.esClient = esClient;

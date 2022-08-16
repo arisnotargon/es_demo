@@ -242,39 +242,83 @@ router.get("/detail", function (req, res, next) {
     });
 });
 
+let pageByCategory = async function (req, res, next) {
+  const pageNo = Number(req.query.pageNo || 1);
+  const pageSize = Number(req.query.pageSize || 10);
+
+  let reData = {
+    code: "0",
+    data: [],
+    total: 0,
+  };
+  const from = (pageNo - 1) * pageSize;
+
+  let searchRes = await dbUtils.esClient.search({
+    index: "article",
+    type: "_doc",
+    from: from,
+    size: pageSize,
+    body: {
+      query: {
+        match: { category_names_string: req.query.keyword },
+      },
+    },
+  });
+
+  let hits = searchRes?.hits;
+  let total = 0;
+  if (typeof hits?.total?.value === "number") {
+    total = hits.total.value;
+  }
+  let articleIds = [];
+  if (hits?.hits instanceof Array) {
+    hits.hits.forEach((v, k) => {
+      if (typeof v?._source?.id === "number") {
+        articleIds.push(v._source.id);
+      }
+    });
+  }
+
+  if (articleIds.length > 0) {
+    let sql = `SELECT 
+ a.id, a.article_name, a.poster, a.read_num, a.summary, a.create_time, a.update_time, u.nick_name AS author, GROUP_CONCAT(DISTINCT c.id SEPARATOR " ") AS categoryIDs, GROUP_CONCAT(DISTINCT c.category_name SEPARATOR " ") AS categoryNames, GROUP_CONCAT(DISTINCT t.id SEPARATOR " ") AS tagIDs, GROUP_CONCAT(DISTINCT t.tag_name SEPARATOR " ") AS tagNames 
+FROM 
+        article a
+        LEFT JOIN user u ON a.author_id = u.id
+        LEFT JOIN article_category a_c ON a.id = a_c.article_id
+        LEFT JOIN category c ON a_c.category_id = c.id
+        LEFT JOIN article_tag a_t ON a.id = a_t.article_id
+        LEFT JOIN tag t ON a_t.tag_id = t.id
+        WHERE a.private = 0 AND a.deleted = 0 AND a.id in (`;
+    // 拼接占位符
+    for (i = 0; i < articleIds.length; i++) {
+      sql += "?,";
+    }
+    sql =
+      sql.slice(0, -1) +
+      `)
+        GROUP BY a.id
+        ORDER BY a.create_time desc;`;
+    try {
+      let dbRes = await dbUtils.query({ sql: sql, values: [...articleIds] });
+      reData.total = total;
+      reData.data = dbRes.results;
+    } catch (err) {
+      reData = {
+        code: "003001",
+        data: [],
+      };
+    }
+  }
+
+  res.send(reData);
+};
+
 /**
  * @param {String} keyword 分类名
  * @description 根据分类名查询文章
  */
-router.get("/page_by_category", function (req, res, next) {
-  const pageNo = Number(req.query.pageNo || 1);
-  const pageSize = Number(req.query.pageSize || 10);
-  dbUtils
-    .query({
-      sql: indexSQL.GetPagedArticleByCategory,
-      values: [
-        req.query.keyword,
-        (pageNo - 1) * pageSize,
-        pageSize,
-        req.query.keyword,
-      ],
-    })
-    .then(({ results }) => {
-      if (results) {
-        results[0].forEach(handleCategoryAndTag);
-        res.send({
-          code: "0",
-          data: results[0],
-          total: results[1][0]["total"],
-        });
-      } else {
-        res.send({
-          code: "003001",
-          data: [],
-        });
-      }
-    });
-});
+router.get("/page_by_category", pageByCategory);
 
 /**
  * @param {String} keyword 标签名
